@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --color-ink: #17171a; /* text, sidebar, dark cards */
+  --color-ink-2: #2a2a30; /* active sidebar item */
+  --color-paper: #f5f3ef; /* page background */
+  --color-surface: #ffffff; /* cards */
+  --color-line: #e2ded6; /* borders */
+  --color-line-soft: #efece6; /* table rows, progress track */
+  --color-muted: #5e5a53; /* secondary text */
+  --color-body-2: #3f3c37;
+
+  --color-primary: #2346b8;
+  --color-primary-dark: #1a3590;
+  --color-primary-soft: #e8ecfa;
+  --color-primary-ring: #dde3f7;
+
+  --color-success: #15803d;
+  --color-success-text: #146c33;
+  --color-success-soft: #e6f4ea;
+  --color-warning: #b45309;
+  --color-warning-text: #8a4006;
+  --color-warning-soft: #fdf1e3;
+  --color-danger: #b42318;
+  --color-danger-text: #8f1d14;
+  --color-danger-soft: #fff4f2;
+
+  --radius-control: 10px;
+  --radius-card: 12px;
+  --radius-phone-card: 16px;
+  --radius-device: 32px; /* phone frame in landing illustrations */
+
+  /* Typography (spec §10) */
+  --text-h1: 28px;
+  --text-h1--line-height: 1.2;
+  --text-h1--font-weight: 700;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h2: 16px;
+  --text-h2--line-height: 1.4;
+  --text-h2--font-weight: 600;
+  --text-body: 14px;
+  --text-body--line-height: 1.5;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-worker: 17px;
+  --text-worker--line-height: 1.45;
+  --text-worker-title: 26px;
+  --text-worker-title--line-height: 1.2;
+  --text-worker-title--font-weight: 700;
+  --text-micro: 10px;
+  --text-micro--line-height: 1.2;
+  --text-section: 36px;
+  --text-section--line-height: 1.15;
+  --text-section--font-weight: 700;
+  --text-section--letter-spacing: -0.02em;
+  --text-display: 44px;
+  --text-display--line-height: 1.1;
+  --text-display--font-weight: 700;
+  --text-display--letter-spacing: -0.02em;
+
+  /* Component sizes */
+  --spacing-control-sm: 36px;
+  --spacing-control: 44px;
+  --spacing-control-xl: 64px;
+  --spacing-touch: 56px;
+  --spacing-pin-key: 72px;
+  --spacing-scan: 240px;
+  --spacing-sidebar: 220px;
+  --spacing-content: 1200px;
+
+  --breakpoint-nav: 900px;
+
+  --shadow-card: 0 1px 2px rgb(23 23 26 / 0.04);
+  --shadow-overlay: 0 12px 32px rgb(23 23 26 / 0.18);
+}
+
+/* Numbers: sums, quantities, percents, ids */
+@utility num {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Late order row: red background + red left edge (spec §9, 2.2) */
+@utility row-danger {
+  background: var(--color-danger-soft);
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+}
