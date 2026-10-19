@@ -7,4 +7,5 @@ export * from './schemas/error';
 export * from './schemas/health';
 export * from './schemas/lead';
 export * from './schemas/model';
+export * from './schemas/tenant';
 export * from './schemas/user';

@@ -1,9 +1,12 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import { db } from '../mocks/data/db';
 import { server } from '../mocks/node';
 import { i18n } from '../shared/i18n';
+
+// Lazy routes + argon-free but still async flows: give slow CI machines more room than 1s.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom's AbortSignal is rejected by Node's (undici) Request, which React Router's data
 // router constructs on every navigation. Tests don't rely on aborting, so drop the signal.

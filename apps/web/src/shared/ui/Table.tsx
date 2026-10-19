@@ -70,7 +70,7 @@ export function Table<T>({
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={cn('h-12 px-4', ALIGN[col.align ?? 'left'], col.className)}
+                    className={cn('h-12 px-4 py-2', ALIGN[col.align ?? 'left'], col.className)}
                   >
                     {col.render(row)}
                   </td>

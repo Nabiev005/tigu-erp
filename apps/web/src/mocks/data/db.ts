@@ -1,4 +1,14 @@
-import type { AuthUser, Locale, Permissions, Role } from '@tigu/shared';
+import type {
+  AuditLogEntry,
+  AuthUser,
+  Brigade,
+  Locale,
+  PayType,
+  Permissions,
+  Role,
+  Tenant,
+  User,
+} from '@tigu/shared';
 
 // In-memory fake backend for MSW. Demo credentials are listed in the README.
 
@@ -15,6 +25,10 @@ export interface MockUser {
   twoFactor: boolean;
   failedPinCount: number;
   lockedUntil: number | null;
+  brigadeId?: string | null;
+  payType?: PayType;
+  monthlySalary?: number | null;
+  isActive?: boolean;
 }
 
 export interface MockTenant {
@@ -66,6 +80,9 @@ interface DbState {
   tenants: MockTenant[];
   users: MockUser[];
   sessionUserId: string | null;
+  brigades: Brigade[];
+  settings: Pick<Tenant, 'city' | 'timezone' | 'workDays' | 'shiftHours'>;
+  audit: AuditLogEntry[];
 }
 
 function initialState(): DbState {
@@ -82,6 +99,14 @@ function initialState(): DbState {
       demoUser(8, 'CLIENT', 'ОсОО «Ала-Тоо Текстиль»', { locale: 'ru' }),
     ],
     sessionUserId: null,
+    brigades: [{ id: 'b-1', name: '1-бригада', foremanId: 'u-foreman', membersCount: 1 }],
+    settings: {
+      city: 'Бишкек',
+      timezone: 'Asia/Bishkek',
+      workDays: [1, 2, 3, 4, 5, 6],
+      shiftHours: 8,
+    },
+    audit: [],
   };
 }
 
@@ -149,6 +174,52 @@ export const db = {
   },
   getChallenge: (id: string) => challenges.get(id),
   deleteChallenge: (id: string) => challenges.delete(id),
+  listUsers: (tenantId: string) => state.users.filter((u) => u.tenantId === tenantId),
+  brigades: () => state.brigades,
+  addBrigade(brigade: Brigade) {
+    state.brigades.push(brigade);
+    persist();
+  },
+  tenant(id: string): Tenant {
+    const t = state.tenants.find((x) => x.id === id) ?? DEMO_TENANT;
+    return {
+      id: t.id,
+      name: t.name,
+      plan: 'start',
+      employeesCount: 40,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      ...state.settings,
+    };
+  },
+  updateTenant(id: string, patch: Partial<Tenant>) {
+    const { name, ...settings } = patch;
+    if (name) state.tenants = state.tenants.map((t) => (t.id === id ? { ...t, name } : t));
+    state.settings = { ...state.settings, ...settings };
+    persist();
+  },
+  audit: () => state.audit,
+  addAudit(entry: AuditLogEntry) {
+    state.audit.unshift(entry);
+    persist();
+  },
+  toUser(user: MockUser): User {
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      phone: user.phone,
+      role: user.role,
+      permissions: user.permissions,
+      brigadeId: user.brigadeId ?? null,
+      payType: user.payType ?? 'PIECE',
+      monthlySalary: user.monthlySalary ?? null,
+      locale: user.locale,
+      twoFactorEnabled: user.twoFactor,
+      isActive: user.isActive ?? true,
+      telegramLinked: false,
+      pinLocked: Boolean(user.lockedUntil && user.lockedUntil > Date.now()),
+      createdAt: '2026-10-01T00:00:00.000Z',
+    };
+  },
   toAuthUser(user: MockUser): AuthUser {
     const tenant = state.tenants.find((t) => t.id === user.tenantId) ?? DEMO_TENANT;
     return {

@@ -1,4 +1,4 @@
-import { ROLE_HOME, type AuthUser, type Session } from '@tigu/shared';
+import { LocaleSchema, ROLE_HOME, type AuthUser, type Session } from '@tigu/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { setRefreshHandler } from '../../../shared/api/client';
 import { tokenStore } from '../../../shared/api/tokenStore';
-import { setLocale } from '../../../shared/i18n';
+import { i18n, setLocale } from '../../../shared/i18n';
 import { authApi } from '../api/authApi';
 
 type AuthState =
@@ -26,6 +26,16 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+// Concurrent refreshes (StrictMode double effects, a 401 burst) must share one request:
+// sending the same refresh cookie twice looks like token theft to the API.
+let refreshInFlight: Promise<Session> | null = null;
+function refreshSession(): Promise<Session> {
+  refreshInFlight ??= authApi.refresh().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -51,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const refresh = async () => {
       try {
-        const session = await authApi.refresh();
+        const session = await refreshSession();
         tokenStore.set(session.accessToken);
         setState({ status: 'authenticated', user: session.user });
         return true;
@@ -64,6 +74,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
     return () => setRefreshHandler(null);
   }, [clear]);
+
+  // The language picked in the UI is saved on the account (spec §12).
+  const user = state.user;
+  useEffect(() => {
+    if (!user) return;
+    const onChange = (lng: string) => {
+      const parsed = LocaleSchema.safeParse(lng);
+      if (!parsed.success || parsed.data === user.locale) return;
+      authApi
+        .updateMe({ locale: parsed.data })
+        .then((updated) => setState({ status: 'authenticated', user: updated }))
+        .catch(() => undefined);
+    };
+    i18n.on('languageChanged', onChange);
+    return () => i18n.off('languageChanged', onChange);
+  }, [user]);
 
   const value = useMemo(() => ({ state, signIn, signOut }), [state, signIn, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

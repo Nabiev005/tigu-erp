@@ -1,5 +1,7 @@
 import {
+  AuthUserSchema,
   LoginResponseSchema,
+  type MeUpdateRequest,
   OtpChallengeSchema,
   SessionSchema,
   type CodeVerifyRequest,
@@ -27,4 +29,5 @@ export const authApi = {
     api.post('/auth/register', body, { ...noRefresh, schema: OtpChallengeSchema }),
   refresh: () => api.post('/auth/refresh', undefined, { ...noRefresh, schema: SessionSchema }),
   logout: () => api.post<undefined>('/auth/logout', undefined, noRefresh),
+  updateMe: (body: MeUpdateRequest) => api.patch('/auth/me', body, { schema: AuthUserSchema }),
 };

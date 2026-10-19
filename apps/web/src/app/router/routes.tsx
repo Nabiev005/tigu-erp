@@ -74,7 +74,19 @@ const appRoutes: RouteObject[] = [
           { path: 'payroll', ...stage('payroll', 8) },
           { path: 'payroll/:periodId', ...stage('payroll', 8) },
           { path: 'reports', ...stage('reports', 9) },
-          { path: 'settings/*', ...stage('settings', 2) },
+          {
+            path: 'settings',
+            element: <RequireRole section="settings" />,
+            children: [
+              { index: true, element: <Navigate to="users" replace /> },
+              {
+                path: ':tab',
+                lazy: async () => ({
+                  Component: (await import('../../pages/admin/settings/SettingsPage')).SettingsPage,
+                }),
+              },
+            ],
+          },
           { path: 'warehouse', ...stage('warehouse', 11) },
           { path: 'quality', ...stage('quality', 11) },
         ],

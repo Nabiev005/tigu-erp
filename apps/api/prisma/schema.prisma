@@ -1,0 +1,550 @@
+// Spec §6. Relations and indexes added; field meanings unchanged.
+// Money is always Int in tiyin (1 som = 100 tiyin).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime connects as the non-owner app role so Row Level Security applies.
+  url       = env("DATABASE_URL")
+  // Migrations run as the owner role.
+  directUrl = env("DATABASE_ADMIN_URL")
+}
+
+enum Role {
+  OWNER
+  TECHNOLOGIST
+  FOREMAN
+  CUTTER
+  SEWER
+  STOREKEEPER
+  ACCOUNTANT
+  CLIENT
+}
+
+enum PayType {
+  PIECE
+  SALARY
+}
+
+enum Currency {
+  KGS
+  RUB
+  KZT
+  USD
+}
+
+enum OrderStatus {
+  NEW
+  CUTTING
+  SEWING
+  QC
+  PACKING
+  SHIPPED
+  CANCELLED
+}
+
+enum BundleStatus {
+  CUT
+  SEWING
+  SEWN
+  QC_PASSED
+  REWORK
+  PACKED
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+}
+
+enum AdjustmentType {
+  ADVANCE
+  BONUS
+  DEFECT_DEDUCTION
+}
+
+enum Locale {
+  ky
+  ru
+}
+
+model Tenant {
+  id         String   @id @default(uuid())
+  name       String
+  city       String?
+  plan       String   @default("start")
+  /// From the registration form (spec §9, 6.2).
+  employeesCount Int?
+  timezone   String   @default("Asia/Bishkek")
+  /// ISO weekdays that count as working days (1 = Monday). Spec §7.3: Mon–Sat by default.
+  workDays   Int[]    @default([1, 2, 3, 4, 5, 6])
+  /// Shift length for productivity, spec §7.5.
+  shiftHours Int      @default(8)
+  createdAt  DateTime @default(now())
+
+  users              User[]
+  brigades           Brigade[]
+  customers          Customer[]
+  operationRefs      OperationRef[]
+  models             Model[]
+  techCards          TechCard[]
+  orders             Order[]
+  cuttingTasks       CuttingTask[]
+  bundles            Bundle[]
+  workRecords        WorkRecord[]
+  payrollPeriods     PayrollPeriod[]
+  payrollAdjustments PayrollAdjustment[]
+  auditLogs          AuditLog[]
+  counters           Counter[]
+  materials          Material[]
+  suppliers          Supplier[]
+  stockMovements     StockMovement[]
+  defects            Defect[]
+}
+
+model User {
+  id               String    @id @default(uuid())
+  tenantId         String
+  fullName         String
+  phone            String // E.164: +996555123456
+  passwordHash     String? // managers
+  pinHash          String? // sewers (4 digits)
+  role             Role
+  permissions      Json      @default("{}") // { canSeePrices: true, ... }
+  brigadeId        String?
+  payType          PayType   @default(PIECE)
+  monthlySalary    Int? // tiyin, for SALARY
+  telegramChatId   String?
+  locale           Locale    @default(ky)
+  twoFactorEnabled Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  failedPinCount   Int       @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  brigade       Brigade?       @relation("BrigadeMembers", fields: [brigadeId], references: [id], onDelete: SetNull)
+  ledBrigades   Brigade[]      @relation("BrigadeForeman")
+  refreshTokens RefreshToken[]
+  workRecords   WorkRecord[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, role])
+  @@index([phone])
+}
+
+model Brigade {
+  id        String  @id @default(uuid())
+  tenantId  String
+  name      String
+  foremanId String?
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  foreman User?  @relation("BrigadeForeman", fields: [foremanId], references: [id], onDelete: SetNull)
+  members User[] @relation("BrigadeMembers")
+
+  @@index([tenantId])
+}
+
+model Customer {
+  id           String  @id @default(uuid())
+  tenantId     String
+  name         String
+  country      String  @default("KG")
+  phone        String?
+  email        String?
+  note         String?
+  portalUserId String? // User with role CLIENT
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([tenantId])
+}
+
+model OperationRef {
+  id        String  @id @default(uuid())
+  tenantId  String
+  name      String
+  equipment String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+}
+
+model Model {
+  id        String   @id @default(uuid())
+  tenantId  String
+  article   String
+  name      String
+  photoUrl  String?
+  sizes     String[] // ["S","M","L","XL"]
+  createdAt DateTime @default(now())
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  techCards TechCard[]
+  orders    Order[]
+
+  @@unique([tenantId, article])
+}
+
+model TechCard {
+  id         String   @id @default(uuid())
+  tenantId   String
+  modelId    String
+  version    Int      @default(1)
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  model      Model               @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  operations TechCardOperation[]
+  bom        BomItem[]
+  orders     Order[]
+
+  @@unique([modelId, version])
+  @@index([tenantId])
+}
+
+model TechCardOperation {
+  id          String  @id @default(uuid())
+  techCardId  String
+  seq         Int // execution order: 1, 2, 3...
+  name        String
+  equipment   String?
+  priceTiyin  Int // 800 = 8.00 som
+  normSeconds Int
+
+  techCard    TechCard     @relation(fields: [techCardId], references: [id], onDelete: Cascade)
+  workRecords WorkRecord[]
+
+  @@unique([techCardId, seq])
+}
+
+model BomItem {
+  id         String  @id @default(uuid())
+  techCardId String
+  materialId String?
+  name       String
+  qty        Decimal @db.Decimal(12, 3)
+  unit       String // "м", "даана", "бобина"
+
+  techCard TechCard @relation(fields: [techCardId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  tenantId       String
+  number         String // "Б-0142", sequential within tenant
+  customerId     String
+  modelId        String
+  techCardId     String // tech card version fixed at creation
+  unitPriceMinor Int
+  currency       Currency    @default(KGS)
+  deadline       DateTime    @db.Date
+  status         OrderStatus @default(NEW)
+  createdById    String
+  createdAt      DateTime    @default(now())
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer      Customer             @relation(fields: [customerId], references: [id])
+  model         Model                @relation(fields: [modelId], references: [id])
+  techCard      TechCard             @relation(fields: [techCardId], references: [id])
+  lines         OrderLine[]
+  files         OrderFile[]
+  statusHistory OrderStatusHistory[]
+  cuttingTasks  CuttingTask[]
+  bundles       Bundle[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, deadline])
+}
+
+model OrderLine {
+  id      String @id @default(uuid())
+  orderId String
+  size    String
+  color   String
+  qty     Int
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, size, color])
+}
+
+model OrderFile {
+  id        String   @id @default(uuid())
+  orderId   String
+  name      String
+  url       String
+  sizeBytes Int
+  mime      String
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderStatusHistory {
+  id       String       @id @default(uuid())
+  orderId  String
+  from     OrderStatus?
+  to       OrderStatus
+  byUserId String
+  at       DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model CuttingTask {
+  id          String   @id @default(uuid())
+  tenantId    String
+  orderId     String
+  number      String
+  fabricUsedM Decimal? @db.Decimal(10, 2)
+  fabricLeftM Decimal? @db.Decimal(10, 2)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bundles Bundle[]
+
+  @@unique([tenantId, number])
+}
+
+model Bundle {
+  id             String       @id @default(uuid())
+  tenantId       String
+  orderId        String
+  cuttingTaskId  String
+  number         Int // #0457, sequential within tenant
+  size           String
+  color          String
+  qty            Int
+  qrToken        String       @unique // random, 16+ chars, unguessable
+  status         BundleStatus @default(CUT)
+  labelPrintedAt DateTime?
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cuttingTask CuttingTask  @relation(fields: [cuttingTaskId], references: [id], onDelete: Cascade)
+  workRecords WorkRecord[]
+
+  @@unique([tenantId, number])
+  @@index([orderId])
+}
+
+/// One scan = one record. Partial unique index "work_record_once" lives in the migration.
+model WorkRecord {
+  id                  String    @id // UUID generated on the CLIENT (offline)
+  tenantId            String
+  bundleId            String
+  techCardOperationId String
+  workerId            String
+  qty                 Int // usually bundle.qty
+  priceTiyin          Int // price at scan time (snapshot)
+  amountTiyin         Int // qty * priceTiyin
+  normSeconds         Int // snapshot
+  scannedAt           DateTime // device time
+  receivedAt          DateTime  @default(now())
+  cancelledAt         DateTime?
+  cancelledById       String?
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bundle    Bundle            @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  operation TechCardOperation @relation(fields: [techCardOperationId], references: [id])
+  worker    User              @relation(fields: [workerId], references: [id])
+
+  @@index([tenantId, workerId, scannedAt])
+  @@index([bundleId])
+}
+
+model PayrollPeriod {
+  id           String        @id @default(uuid())
+  tenantId     String
+  from         DateTime      @db.Date
+  to           DateTime      @db.Date
+  status       PayrollStatus @default(DRAFT)
+  approvedById String?
+  approvedAt   DateTime?
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines  PayrollLine[]
+
+  @@index([tenantId, from])
+}
+
+model PayrollLine {
+  id             String @id @default(uuid())
+  periodId       String
+  userId         String
+  pieces         Int
+  accruedTiyin   Int
+  bonusTiyin     Int
+  advanceTiyin   Int
+  deductionTiyin Int
+  totalTiyin     Int
+
+  period PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, userId])
+}
+
+model PayrollAdjustment {
+  id          String         @id @default(uuid())
+  tenantId    String
+  userId      String
+  periodId    String?
+  type        AdjustmentType
+  amountTiyin Int
+  reason      String
+  createdById String
+  createdAt   DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entity, entityId])
+  @@index([tenantId, createdAt])
+}
+
+/// One-time codes: 2FA, OTP login and phone confirmation at registration.
+model OtpCode {
+  id        String    @id @default(uuid())
+  phone     String
+  codeHash  String
+  channel   String // telegram | sms
+  /// 2fa | login | register
+  purpose   String
+  userId    String?
+  /// Pending registration data (password already hashed) until the phone is confirmed.
+  payload   Json?
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([phone])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// Set when replaced by rotation (not by logout/theft): allows a short grace window.
+  rotatedAt DateTime?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Per-tenant sequential numbers (spec §7.7): key = "order" | "cutting" | "bundle".
+model Counter {
+  tenantId String
+  key      String
+  value    Int    @default(0)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+}
+
+/// Demo requests from the public site (POST /leads). Not tenant data.
+model Lead {
+  id             String   @id @default(uuid())
+  name           String
+  phone          String
+  employeesCount Int
+  createdAt      DateTime @default(now())
+}
+
+// ---------- Stage 2 ----------
+
+model Material {
+  id          String  @id @default(uuid())
+  tenantId    String
+  kind        String
+  name        String
+  color       String?
+  composition String?
+  widthCm     Int?
+  unit        String
+  minStock    Decimal @db.Decimal(12, 3)
+  priceTiyin  Int
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Supplier {
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  phone    String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model StockMovement {
+  id            String   @id @default(uuid())
+  tenantId      String
+  materialId    String
+  type          String // IN | OUT | ADJUST
+  qty           Decimal  @db.Decimal(12, 3)
+  priceTiyin    Int?
+  supplierId    String?
+  orderId       String?
+  cuttingTaskId String?
+  note          String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, materialId])
+}
+
+model Defect {
+  id           String   @id @default(uuid())
+  tenantId     String
+  bundleId     String
+  workRecordId String
+  workerId     String
+  type         String
+  qty          Int
+  photoUrls    String[]
+  status       String // REWORK | FIXED | ACCEPTED
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, bundleId])
+}
